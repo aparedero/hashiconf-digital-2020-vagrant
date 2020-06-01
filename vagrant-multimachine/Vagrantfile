@@ -1,0 +1,49 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+#
+# Author: alejandro@paredero.com
+# This Vagranfile requires the following plugins. Execute this command before launching this environment.
+# vagrant plugin install vagrant-hosts vagrant-vbguest
+Vagrant.configure("2") do |config|
+    config.ssh.insert_key = false
+    config.ssh.private_key_path = ["keys/insecure.pem", "~/.vagrant.d/insecure_private_key"]
+    config.vm.provision "file", source: "keys/insecure.pub", destination: "~/.ssh/authorized_keys"
+    config.vm.provision "file", source: "keys/insecure.pem", destination: "~/.ssh/insecure.pem"
+    config.vm.provision "file", source: "keys/insecure.pem", destination: "~/.ssh/id_rsa"
+
+    config.vm.provider "virtualbox" do |virtualbox|
+      virtualbox.customize ["modifyvm", :id, "--groups", "/HashiConfDigital2020"]
+       end
+
+  ################
+  ##  PROVISION ##
+  ################
+  $provision_ubuntu = <<-SHELL
+  apt update
+  apt install -y apache2 openssh-server
+  service apache2 start
+  chown -R vagrant:vagrant /home/vagrant
+  chown -R vagrant:vagrant /vagrant
+  chmod 600 /home/vagrant/.ssh/*
+  SHELL
+  
+  ###########
+  ## NODES ##
+  ###########
+  ### UBUNTU Remote Nodes
+    (1..3).each do |i|
+      config.vm.define "ubuntu-#{i}" do |ubuntu|
+        ubuntu.vm.box = "ubuntu/xenial64"
+        ubuntu.vm.network :private_network, ip: "192.168.33.2#{i}"
+        ubuntu.vm.network :forwarded_port, guest: 80, host: "888#{i}"
+        ubuntu.vm.hostname = "ubuntu-#{i}"
+        ubuntu.vm.provision "shell", inline: $provision_ubuntu
+        ubuntu.vm.synced_folder "./shared_folder", "/vagrant", type:"virtualbox", owner: "vagrant", group: "vagrant", create: true, automount: true, mount_options: ['dmode=755', 'fmode=755']
+        ubuntu.vm.provision :hosts, :sync_hosts => true
+        ubuntu.vm.provider :virtualbox do |vce|
+          vce.customize ["modifyvm", :id, "--memory", "512"]
+        end
+      end
+    end
+  ### END UBUNTU Remote Nodes
+  end
